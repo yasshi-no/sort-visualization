@@ -2,14 +2,15 @@
 
 // 配列
 let array;
-const ARRAY_LENGTH = 50;
+const ARRAY_LENGTH = 300;
+const PARALLEL_PROCESS_QTY_MAX = 10;
 // 描画先オブジェクト
 let canvas;
 let context;
 const GRAPH_UPPERLEFT_X = 0;
 const GRAPH_UPPERLEFT_Y = 0;
-const BAR_UNIT_HEIGHT = 5;
-const BAR_WIDTH = 5;
+const BAR_UNIT_HEIGHT = 1;
+const BAR_WIDTH = 1;
 const GRAPH_WIDTH = BAR_WIDTH * ARRAY_LENGTH;
 const GRAPH_HEIGHT = BAR_UNIT_HEIGHT * ARRAY_LENGTH;
 const COLOR_BACKGROUND = "black";
@@ -22,14 +23,19 @@ let frame = 0;
 // web audio api contextを作成する
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx;
-let oscillator;
 let gainNode;
 const FREQUENCY_BASE = 400;
-const FREQUENCY_UNIT = 10;
+const FREQUENCY_UNIT = 5;
+const VOLUME_MAX = 0.2;
+// const OSCILLATOR_TYPE = "sin";
+const OSCILLATOR_TYPE = "square";
+// const OSCILLATOR_TYPE = "sawtooth";
+// const OSCILLATOR_TYPE = "triangle";
 // 処理手順のキュー
 let processQueue;
 // 実行中の処理
 let process;
+let parallelQty;
 
 
 
@@ -38,6 +44,8 @@ class MyArray {
         this.array = Array(ARRAY_LENGTH);   // 配列の実体
         this.colors = Array(ARRAY_LENGTH);  // 表示色
         this.colorStack = []  // 一時的な色, [インデックス, 表示色]
+        this.oscillators = []   // 鳴動させるoscillator
+        this.frequencies = [];  // 鳴動させる周波数
         for (let i = 0; i < ARRAY_LENGTH; i++) {
             this.array[i] = i + 1;
             this.colors[i] = COLOR_BAR;
@@ -49,7 +57,6 @@ class MyArray {
         let tmp = this.array[x];
         this.array[x] = this.array[y];
         this.array[y] = tmp;
-
     }
 
 
@@ -59,8 +66,6 @@ class MyArray {
 /* 配列の処理をするためのクラス. */
 class Process {
     constructor() {
-        // oscillatorを初期化する
-        initOscillator();
     }
 
     /* 1フレームの処理内容を記述 */
@@ -72,7 +77,7 @@ class Process {
     /* アクセスを通知する */
     notifyAccess(idx) {
         array.colorStack.push([idx, COLOR_BAR_ACCESSED]);
-        changeFrequency(idx);
+        array.frequencies.push(calcFrequency(idx));
     }
 }
 
@@ -88,7 +93,6 @@ class Shuffle extends Process {
         this.i = 0;
         this.swapIdx1 = -1;
         this.swapIdx2 = -1;
-        oscillator.start(0);
 
     }
 
@@ -132,7 +136,6 @@ class Shuffle extends Process {
 
         // 処理が完了した場合
         if (this.i == ARRAY_LENGTH) {
-            oscillator.stop();
             return true;
         }
 
@@ -154,7 +157,6 @@ class BubbleSort extends Process {
         this.j = 0
         this.swapIdx1 = -1;
         this.swapIdx2 = -1;
-        oscillator.start(0);
         console.log("bubble");
 
     }
@@ -207,7 +209,6 @@ class BubbleSort extends Process {
 
         // 処理が完了した場合
         if (this.i == 0) {
-            oscillator.stop();
             return true;
         }
 
@@ -218,23 +219,27 @@ class BubbleSort extends Process {
 
 /* Processの実行を管理するためのクラス. */
 class ProcessQueue {
-    constructor(processes) {
+    constructor(processes, parallelQties) {
         this.queue = processes;
+        this.parallelQties = parallelQties;
 
     }
 
     // プロセスの追加
-    push(process) {
+    push(process, parallelQty) {
         this.queue.push(process);
+        this.parallelQties(parallelQty);
     }
 
     // プロセスの消去
     pop() {
-        let ret;
+        let ret = [-1, -1];
         if (this.queue.length != 0) {
-            ret = this.queue.shift();
+            ret[0] = this.queue.shift();
+            ret[1] = this.parallelQties.shift();
         } else {
-            ret = Process;
+            ret[0] = Process;
+            ret[1] = 1;
         }
 
         return ret;
@@ -257,38 +262,58 @@ function InitDraw() {
 function initOscillator() {
     // web audio api contextを作成する
     audioCtx = new AudioContext();
-    // oscillatorとgain nodeを作成する
-    oscillator = audioCtx.createOscillator();
+    // gain nodeを作成する
     gainNode = audioCtx.createGain();
 
-    // oscillatorとgain nodeを接続する
-    oscillator.connect(gainNode);
+    // audioCtxとgain nodeを接続する
     gainNode.connect(audioCtx.destination);
-    // oscillatorの設定をする
-    oscillator.type = 'sin'
-    gainNode.gain.value = 0.1;
+    // // gainNodeの設定をする
+    gainNode.gain.value = VOLUME_MAX;
+
+    // oscillatorをarrayに追加する
+    for (let i = 0; i < PARALLEL_PROCESS_QTY_MAX; i++) {
+        array.oscillators.push(makeOscillator(0));
+        array.oscillators[i].start();
+    }
 }
 
-/* array.array[idx]に応じて周波数を調節する. */
-function changeFrequency(idx) {
-    console.log(idx);
-    console.log(FREQUENCY_BASE + FREQUENCY_UNIT * array.array[idx])
-    oscillator.frequency.value = FREQUENCY_BASE + FREQUENCY_UNIT * array.array[idx];
+/* oscillatorを作成する. */
+function makeOscillator(frequency) {
+    let oscillator = audioCtx.createOscillator();
+    // oscillatorとgain nodeを接続する
+    oscillator.connect(gainNode);
+    // oscillatorの設定をする
+    oscillator.type = OSCILLATOR_TYPE;
+
+    return oscillator;
+}
+
+/* array.array[idx]より周波数を計算する. */
+function calcFrequency(idx) {
+    let ret = FREQUENCY_BASE + FREQUENCY_UNIT * array.array[idx];
+    return ret;
 }
 
 
 /* 初期化する. */
 function init() {
+    array = new MyArray();
+
+
     // 画面描画について初期化する.
     InitDraw();
 
     // oscillatorを初期化する
-    // initOscillator();
+    initOscillator();
 
-    array = new MyArray();
     let processes = [Shuffle, BubbleSort]
-    processQueue = new ProcessQueue(processes);
-    process = new (processQueue.pop())()
+    let parallelQties = [10, 30];
+    processQueue = new ProcessQueue(processes, parallelQties);
+    let popped = processQueue.pop();
+
+    process = new popped[0]()
+    parallelQty = popped[1];
+
 
 
 }
@@ -298,34 +323,23 @@ function init() {
 
 /* 更新する. */
 function update() {
-    if (process.update()) {
-        process = new (processQueue.pop())();
+    for (let i = 0; i < parallelQty; i++) {
+        // processが終了したら, 次のプロセスにうつる.
+        if (process.update()) {
+            let popped = processQueue.pop();
+            process = new popped[0]()
+            parallelQty = popped[1];
+            break;
+        }
     }
-    if (process.update()) {
-        process = new (processQueue.pop())();
-    }
-    if (process.update()) {
-        process = new (processQueue.pop())();
-    }
-    if (process.update()) {
-        process = new (processQueue.pop())();
-    }
-    if (process.update()) {
-        process = new (processQueue.pop())();
-    }
-    if (process.update()) {
-        process = new (processQueue.pop())();
-    }
-    if (process.update()) {
-        process = new (processQueue.pop())();
-    }
+
 
     // oscillator.frequency.value++;
     // console.log(oscillator.frequency.value);
 }
 
-/* 配列を描画する. */
-function draw_graph() {
+/* arrayを描画する. */
+function drawGraph() {
     // グラフ背景の表示
     context.fillStyle = COLOR_BACKGROUND;
     context.fillRect(GRAPH_UPPERLEFT_X, GRAPH_UPPERLEFT_Y, GRAPH_WIDTH, GRAPH_HEIGHT);
@@ -346,9 +360,23 @@ function draw_graph() {
 
 }
 
+/* arrayをもとに音を発生させる. */
+function beepGraph() {
+    for (let i = 0; i < PARALLEL_PROCESS_QTY_MAX; i++) {
+        if (i < array.frequencies.length) {
+            array.oscillators[i].frequency.value = array.frequencies[i];
+        } else {
+            array.oscillators[i].frequency.value = 0;
+        }
+    }
+    array.frequencies.length = 0;
+
+}
+
 /* 描画する. */
 function draw() {
-    draw_graph();
+    drawGraph();
+    beepGraph();
 }
 
 /* 1フレームごとに実行する. */
