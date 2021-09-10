@@ -16,6 +16,7 @@ const GRAPH_HEIGHT = BAR_UNIT_HEIGHT * ARRAY_LENGTH;
 const COLOR_BACKGROUND = "black";
 const COLOR_BAR = "white";
 const COLOR_BAR_ACCESSED = "red";
+const COLOR_BAR_SORTED = "lime";
 
 // フレーム数
 let frame = 0;
@@ -73,6 +74,11 @@ class Process {
         this.isFinished = false;
     }
 
+    /* バーの色を初期化する. */
+    initColor() {
+        array.colors.fill(COLOR_BAR);
+    }
+
     /* 1フレームの処理内容を記述 */
     update() {
         /* processが終了した場合trueにする. */
@@ -91,11 +97,66 @@ class Process {
     }
 }
 
-/* 配列の要素をシャッフルする. */
-class Shuffle extends Process {
-
+class CheckSorted extends Process {
     constructor() {
         super();
+        this.initColor();
+
+        this.MODE_SELECT_IDX_1 = 0;
+        this.MODE_SELECT_IDX_2 = 1;
+        this.mode = this.MODE_SELECT_IDX_1;
+
+        this.i = 0;
+    }
+
+    /* 更新する.
+    返り値は処理が完了したか否か. */
+    update() {
+        switch (this.mode) {
+            // 左側の要素の選択
+            case this.MODE_SELECT_IDX_1:
+                // 内部処理
+                this.mode = this.MODE_SELECT_IDX_2;
+                // 描画設定
+                this.notifyAccess(this.i);
+                break;
+            // 右側の要素の選択
+            case this.MODE_SELECT_IDX_2:
+                // 内部処理 
+                this.mode = this.MODE_SELECT_IDX_1;
+                // 描画設定
+                this.notifyAccess(this.i + 1);
+                // パラメータ操作
+                this.i++;
+                break;
+        }
+
+        if (array.array[this.i] <= array.array[this.i + 1]) {
+            // ソートされている場合
+            array.colors[this.i] = COLOR_BAR_SORTED;
+            this.isFinished = false;
+        } else {
+            // ソートされていない場合
+            this.isFinished = true;
+        }
+
+        // 処理が完了した場合
+        if (this.i == ARRAY_LENGTH - 1) {
+            array.colors[this.i] = COLOR_BAR_SORTED;
+            this.isFinished = true;
+        }
+
+        return false;
+
+    }
+}
+
+/* 配列の要素をシャッフルする. */
+class Shuffle extends Process {
+    constructor() {
+        super();
+        this.initColor();
+
         this.MODE_SELECT_IDX_1 = 0;
         this.MODE_SELECT_IDX_2 = 1;
         this.mode = this.MODE_SELECT_IDX_1;
@@ -156,9 +217,10 @@ class Shuffle extends Process {
 
 /* バブルソートをする. */
 class BubbleSort extends Process {
-
     constructor() {
         super();
+        this.initColor();
+
         this.MODE_SELECT_IDX_1 = 0;
         this.MODE_SELECT_IDX_2 = 1;
         this.mode = this.MODE_SELECT_IDX_1;
@@ -371,8 +433,8 @@ function init() {
     // oscillatorを初期化する
     initOscillator();
 
-    let processes = [Shuffle, BubbleSort]
-    let parallelQties = [10, 30];
+    let processes = [Shuffle, BubbleSort, CheckSorted]
+    let parallelQties = [10, 100, 7];
     processQueue = new ProcessQueue(processes, parallelQties);
     let popped = processQueue.pop();
 
