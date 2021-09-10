@@ -228,6 +228,34 @@ class BubbleSort extends Sort {
 
 }
 
+/* 選択ソートをする. */
+class SelectionSort extends Sort {
+    constructor() {
+        super();
+        console.log("Selection")
+    }
+
+    /* 配列へのアクセスごとにyieldする. */
+    *update() {
+        for (let i = 0; i < ARRAY_LENGTH; i++) {
+            let minIdx = i;
+            for (let j = i + 1; j < ARRAY_LENGTH; j++) {
+                let notifyer = new Notifyer(minIdx, array.array[minIdx], COLOR_BAR_ACCESSED);
+                yield notifyer;
+                notifyer = new Notifyer(j, array.array[j], COLOR_BAR_ACCESSED);
+                yield notifyer;
+                if (array.array[minIdx] > array.array[j]) {
+                    minIdx = j;
+                }
+            }
+            array.swap(i, minIdx);
+        }
+        return;
+    }
+}
+
+
+
 /* 0以上a未満の整数値をランダムに生成する. */
 function randint(a) {
     let ret = Math.floor(a * Math.random());
@@ -341,7 +369,7 @@ function init() {
     // プロセスの管理について初期化する
     processAdministratorQueue = [
         new ProcessAdministrator(Shuffle, 50),
-        new ProcessAdministrator(BubbleSort, 50),
+        new ProcessAdministrator(SelectionSort, 50),
         new ProcessAdministrator(CheckSorted, 10)
     ];
 
