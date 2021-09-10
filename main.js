@@ -4,15 +4,18 @@
 let array;
 const ARRAY_LENGTH = 300;
 const PARALLEL_PROCESS_QTY_MAX = 100;
+
 // 描画先オブジェクト
 let canvas;
 let context;
+// 座標
 const GRAPH_UPPERLEFT_X = 0;
 const GRAPH_UPPERLEFT_Y = 0;
 const BAR_UNIT_HEIGHT = 1;
 const BAR_WIDTH = 1;
 const GRAPH_WIDTH = BAR_WIDTH * ARRAY_LENGTH;
 const GRAPH_HEIGHT = BAR_UNIT_HEIGHT * ARRAY_LENGTH;
+// 色
 const COLOR_BACKGROUND = "black";
 const COLOR_BAR = "white";
 const COLOR_BAR_ACCESSED = "red";
@@ -21,22 +24,23 @@ const COLOR_BAR_SORTED = "lime";
 // フレーム数
 let frame = 0;
 // 音声
-// web audio api contextを作成する
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx;
 let gainNode;
 const FREQUENCY_BASE = 400;
 const FREQUENCY_UNIT = 5;
 const SOUND_VOLUME = 0.2;
+// 音の波形
 // const OSCILLATOR_TYPE = "sin";
 const OSCILLATOR_TYPE = "square";
 // const OSCILLATOR_TYPE = "sawtooth";
 // const OSCILLATOR_TYPE = "triangle";
+
 // 処理手順のキュー
-let processQueue;
-// 実行中の処理
-let process;
-let parallelQty;
+let processAdministratorQueue;
+let processAdministrator;
+
+
 
 
 
@@ -59,9 +63,58 @@ class MyArray {
         this.array[x] = this.array[y];
         this.array[y] = tmp;
     }
+}
 
 
 
+/* 描画方法を通知するためのクラス. */
+class Notifyer {
+    constructor(idx, value, color) {
+        this.idx = idx;
+        this.value = value;
+        this.color = color;
+        this.skip = false;  // この通知をフレームの最後の描画とするか否か
+    }
+}
+
+
+
+/* プロセスの実行を管理するためのクラス. */
+class ProcessAdministrator {
+    constructor(processClass, parallelQty) {
+        this.processClass = processClass;
+        this.parallelQty = parallelQty;
+    }
+
+    /* プロセス実行直前に初期化する. */
+    init() {
+        this.process = new this.processClass();
+        this.generator = this.process.update();
+    }
+
+    /* processを実行し, 描画について管理する.
+    返り値はプロセスが終了したか否か. */
+    update() {
+        for (let i = 0; i < this.parallelQty; i++) {
+            let ret = this.generator.next();
+            let isFinished = ret.done;
+            if (isFinished) {
+                return true;
+            } else {
+                // notifyerを処理する
+                let notifyer = ret.value;
+                let idx = notifyer.idx;
+                let color = notifyer.color;
+                // idxが不適切な場合通知
+                if (!(0 <= idx && idx < ARRAY_LENGTH)) {
+                    console.log("idx: " + String(idx));
+                }
+                // arrayに描画するよう伝える
+                array.colorStack.push([idx, color]);
+                array.frequencies.push(calcFrequency(idx));
+            }
+        }
+    }
 }
 
 
@@ -71,7 +124,6 @@ class MyArray {
 /* 配列の処理をするためのクラス. */
 class Process {
     constructor() {
-        this.isFinished = false;
     }
 
     /* バーの色を初期化する. */
@@ -79,75 +131,38 @@ class Process {
         array.colors.fill(COLOR_BAR);
     }
 
-    /* 1フレームの処理内容を記述 */
-    update() {
-        /* processが終了した場合trueにする. */
-        this.isFinished = true;
-        /* 次のフレームに処理を任せたい場合trueを返す. */
-        return false;
+    /* 配列への処理を記述.
+    配列のアクセスのたびにNotifyerオブジェクトをyieldする.
+    処理終了時にはreturnする. */
+    *update() {
+        return;
     }
 
-    /* アクセスを通知する */
-    notifyAccess(idx) {
-        if (!(0 <= idx && idx < ARRAY_LENGTH)) {
-            console.log("idx: " + String(idx));
-        }
-        array.colorStack.push([idx, COLOR_BAR_ACCESSED]);
-        array.frequencies.push(calcFrequency(idx));
-    }
 }
 
+/* ソートが成功したか確認する. */
 class CheckSorted extends Process {
     constructor() {
         super();
         this.initColor();
-
-        this.MODE_SELECT_IDX_1 = 0;
-        this.MODE_SELECT_IDX_2 = 1;
-        this.mode = this.MODE_SELECT_IDX_1;
-
-        this.i = 0;
     }
 
-    /* 更新する.
-    返り値は処理が完了したか否か. */
-    update() {
-        switch (this.mode) {
-            // 左側の要素の選択
-            case this.MODE_SELECT_IDX_1:
-                // 内部処理
-                this.mode = this.MODE_SELECT_IDX_2;
-                // 描画設定
-                this.notifyAccess(this.i);
-                break;
-            // 右側の要素の選択
-            case this.MODE_SELECT_IDX_2:
-                // 内部処理 
-                this.mode = this.MODE_SELECT_IDX_1;
-                // 描画設定
-                this.notifyAccess(this.i + 1);
-                // パラメータ操作
-                this.i++;
-                break;
+    /* 配列へのアクセスごとにyield. */
+    *update() {
+        for (let i = 0; i < ARRAY_LENGTH - 1; i++) {
+            // 右側の要素へのアクセス
+            let notifyer = new Notifyer(i, array.array[i], COLOR_BAR_ACCESSED);
+            yield notifyer;
+            // 左側の要素へのアクセス
+            let idx = randint(ARRAY_LENGTH);
+            notifyer = new Notifyer(i + 1, array.array[i + 1], COLOR_BAR_ACCESSED);
+            yield notifyer;
+            if (array.array[i] <= array.array[i + 1]) {
+                array.colors[i] = COLOR_BAR_SORTED;
+            }
         }
-
-        if (array.array[this.i] <= array.array[this.i + 1]) {
-            // ソートされている場合
-            array.colors[this.i] = COLOR_BAR_SORTED;
-            this.isFinished = false;
-        } else {
-            // ソートされていない場合
-            this.isFinished = true;
-        }
-
-        // 処理が完了した場合
-        if (this.i == ARRAY_LENGTH - 1) {
-            array.colors[this.i] = COLOR_BAR_SORTED;
-            this.isFinished = true;
-        }
-
-        return false;
-
+        array.colors[ARRAY_LENGTH - 1] = COLOR_BAR_SORTED;
+        return;
     }
 }
 
@@ -156,137 +171,61 @@ class Shuffle extends Process {
     constructor() {
         super();
         this.initColor();
-
-        this.MODE_SELECT_IDX_1 = 0;
-        this.MODE_SELECT_IDX_2 = 1;
-        this.mode = this.MODE_SELECT_IDX_1;
-
-        this.i = 0;
-        this.swapIdx1 = -1;
-        this.swapIdx2 = -1;
-
     }
 
-
-    swap() {
-        array.swap(this.swapIdx1, this.swapIdx2);
+    /* 配列へのアクセスごとにyield. */
+    *update() {
+        for (let i = 0; i < ARRAY_LENGTH; i++) {
+            // 入れ替え元の要素へのアクセス
+            let notifyer = new Notifyer(i, array.array[i], COLOR_BAR_ACCESSED);
+            yield notifyer;
+            // 入れ替え先の要素へのアクセス
+            let idx = randint(ARRAY_LENGTH);
+            notifyer = new Notifyer(idx, array.array[idx], COLOR_BAR_ACCESSED);
+            yield notifyer;
+            array.swap(i, idx);
+        }
+        return;
     }
 
-    /* 更新する.
-    返り値は処理が完了したか否か. */
-    update() {
-        // 配列へのアクセス
-        switch (this.mode) {
-            // スワップする要素の選択
-            case this.MODE_SELECT_IDX_1:
-                // 内部処理
-                this.swapIdx1 = this.i;
-                this.mode = this.MODE_SELECT_IDX_2;
-                // 描画設定
-                this.notifyAccess(this.i);
-                break;
-            // スワップする要素をランダムに選択
-            case this.MODE_SELECT_IDX_2:
-                // 内部処理 
-                let idx = randint(ARRAY_LENGTH);
-                this.swapIdx2 = idx;
-                this.mode = this.MODE_SELECT_IDX_1;
-                // 描画設定
-                this.notifyAccess(idx);
-                // パラメータ操作
-                this.i++;
-                break;
-        }
+}
 
-        // スワップ処理
-        if (this.swapIdx1 != -1 && this.swapIdx2 != -1) {
-            this.swap(this.swapIdx1, this.swapIdx2);
-            this.swapIdx1 = -1;
-            this.swapIdx2 = -1;
-        }
+/* ソートをするクラス. */
+class Sort extends Process {
+    constructor() {
+        super();
+        this.initColor();
+    }
 
-        // 処理が完了した場合
-        if (this.i == ARRAY_LENGTH) {
-            this.isFinished = true;
-        }
-
-        return false;
+    /* 配列へのアクセスごとにyield. */
+    *update() {
 
     }
 }
 
 /* バブルソートをする. */
-class BubbleSort extends Process {
+class BubbleSort extends Sort {
     constructor() {
         super();
-        this.initColor();
-
-        this.MODE_SELECT_IDX_1 = 0;
-        this.MODE_SELECT_IDX_2 = 1;
-        this.mode = this.MODE_SELECT_IDX_1;
-
-        this.i = ARRAY_LENGTH - 1;
-        this.j = 0
-        this.swapIdx1 = -1;
-        this.swapIdx2 = -1;
         console.log("bubble");
-
     }
 
-
-    swap() {
-        array.swap(this.swapIdx1, this.swapIdx2);
-    }
-
-    /* 更新する.
-    返り値は処理が完了したか否か. */
-    update() {
-        // 配列へのアクセス
-        switch (this.mode) {
-            // スワップする要素の選択
-            case this.MODE_SELECT_IDX_1:
-                // 内部処理
-                this.swapIdx1 = this.j;
-                this.mode = this.MODE_SELECT_IDX_2;
-                // 描画設定
-                this.notifyAccess(this.j);
-                break;
-            // スワップすべきか比較する
-            case this.MODE_SELECT_IDX_2:
-                // 内部処理 
-                if (array.array[this.j] > array.array[this.j + 1]) {
-                    this.swapIdx2 = this.j + 1;
+    /* 配列へのアクセスごとにyield. */
+    *update() {
+        for (let i = ARRAY_LENGTH - 1; i >= 0; i--) {
+            for (let j = 0; j < i; j++) {
+                let notifyer = new Notifyer(j, array.array[j], COLOR_BAR_ACCESSED);
+                yield notifyer;
+                notifyer = new Notifyer(j + 1, array.array[j + 1], COLOR_BAR_ACCESSED);
+                yield notifyer;
+                if (array.array[j] > array.array[j + 1]) {
+                    array.swap(j, j + 1);
                 }
-                this.mode = this.MODE_SELECT_IDX_1;
-                // 描画設定
-                this.notifyAccess(this.j + 1);
-
-                // パラメータ操作
-                this.j++
-                break;
+            }
         }
-
-        // スワップ処理
-        if (this.swapIdx1 != -1 && this.swapIdx2 != -1) {
-            this.swap(this.swapIdx1, this.swapIdx2);
-            this.swapIdx1 = -1;
-            this.swapIdx2 = -1;
-        }
-
-        // 入れ替えが一周した場合
-        if (this.i == this.j) {
-            this.i--;
-            this.j = 0;
-        }
-
-        // 処理が完了した場合
-        if (this.i == 0) {
-            this.isFinished = true;
-        }
-
-        return false;
-
+        return;
     }
+
 }
 
 /* 0以上a未満の整数値をランダムに生成する. */
@@ -294,40 +233,6 @@ function randint(a) {
     let ret = Math.floor(a * Math.random());
     return ret;
 }
-
-
-
-
-
-/* Processの実行を管理するためのクラス. */
-class ProcessQueue {
-    constructor(processes, parallelQties) {
-        this.queue = processes;
-        this.parallelQties = parallelQties;
-
-    }
-
-    // プロセスの追加
-    push(process, parallelQty) {
-        this.queue.push(process);
-        this.parallelQties(parallelQty);
-    }
-
-    // プロセスの消去
-    pop() {
-        let ret = [-1, -1];
-        if (this.queue.length != 0) {
-            ret[0] = this.queue.shift();
-            ret[1] = this.parallelQties.shift();
-        } else {
-            ret[0] = Process;
-            ret[1] = 1;
-        }
-
-        return ret;
-    }
-}
-
 
 
 
@@ -368,7 +273,7 @@ function initOscillator() {
 
     // audioCtxとgain nodeを接続する
     gainNode.connect(audioCtx.destination);
-    // // gainNodeの設定をする
+    // gainNodeの設定をする
     gainNode.gain.value = SOUND_VOLUME;
 
     // oscillatorをarrayに追加する
@@ -433,13 +338,15 @@ function init() {
     // oscillatorを初期化する
     initOscillator();
 
-    let processes = [Shuffle, BubbleSort, CheckSorted]
-    let parallelQties = [10, 100, 7];
-    processQueue = new ProcessQueue(processes, parallelQties);
-    let popped = processQueue.pop();
+    // プロセスの管理について初期化する
+    processAdministratorQueue = [
+        new ProcessAdministrator(Shuffle, 50),
+        new ProcessAdministrator(BubbleSort, 50),
+        new ProcessAdministrator(CheckSorted, 10)
+    ];
 
-    process = new popped[0]()
-    parallelQty = popped[1];
+    processAdministrator = processAdministratorQueue.shift();
+    processAdministrator.init();
 
 
 
@@ -451,19 +358,15 @@ function init() {
 
 /* 更新する. */
 function update() {
-    for (let i = 0; i < parallelQty; i++) {
-        // 次のフレームの描画に移りたい場合
-        if (process.update()) {
-            continue;
+    // プロセス終了時
+    if (processAdministrator.update()) {
+        // 実行待ちプロセスがない場合
+        if (processAdministratorQueue.length == 0) {
+            processAdministratorQueue.push(new ProcessAdministrator(Process, 1));
         }
-        // processが終了したら, 次のプロセスにうつる.
-        if (process.isFinished) {
-            let popped = processQueue.pop();
-            process = new popped[0]()
-            parallelQty = popped[1];
-            break;
-        }
-
+        // 新たなプロセスの開始
+        processAdministrator = processAdministratorQueue.shift();
+        processAdministrator.init();
     }
 }
 
