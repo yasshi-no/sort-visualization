@@ -3,7 +3,7 @@
 // 配列
 let array;
 const ARRAY_LENGTH = 300;
-const PARALLEL_PROCESS_QTY_MAX = 10;
+const PARALLEL_PROCESS_QTY_MAX = 100;
 // 描画先オブジェクト
 let canvas;
 let context;
@@ -26,7 +26,7 @@ let audioCtx;
 let gainNode;
 const FREQUENCY_BASE = 400;
 const FREQUENCY_UNIT = 5;
-const VOLUME_MAX = 0.2;
+const SOUND_VOLUME = 0.2;
 // const OSCILLATOR_TYPE = "sin";
 const OSCILLATOR_TYPE = "square";
 // const OSCILLATOR_TYPE = "sawtooth";
@@ -63,19 +63,29 @@ class MyArray {
 
 }
 
+
+
+
+
 /* 配列の処理をするためのクラス. */
 class Process {
     constructor() {
+        this.isFinished = false;
     }
 
     /* 1フレームの処理内容を記述 */
     update() {
-        /* プロセス終了時にtrueを返す. */
-        return true;
+        /* processが終了した場合trueにする. */
+        this.isFinished = true;
+        /* 次のフレームに処理を任せたい場合trueを返す. */
+        return false;
     }
 
     /* アクセスを通知する */
     notifyAccess(idx) {
+        if (!(0 <= idx && idx < ARRAY_LENGTH)) {
+            console.log("idx: " + String(idx));
+        }
         array.colorStack.push([idx, COLOR_BAR_ACCESSED]);
         array.frequencies.push(calcFrequency(idx));
     }
@@ -136,7 +146,7 @@ class Shuffle extends Process {
 
         // 処理が完了した場合
         if (this.i == ARRAY_LENGTH) {
-            return true;
+            this.isFinished = true;
         }
 
         return false;
@@ -209,13 +219,23 @@ class BubbleSort extends Process {
 
         // 処理が完了した場合
         if (this.i == 0) {
-            return true;
+            this.isFinished = true;
         }
 
         return false;
 
     }
 }
+
+/* 0以上a未満の整数値をランダムに生成する. */
+function randint(a) {
+    let ret = Math.floor(a * Math.random());
+    return ret;
+}
+
+
+
+
 
 /* Processの実行を管理するためのクラス. */
 class ProcessQueue {
@@ -246,11 +266,30 @@ class ProcessQueue {
     }
 }
 
-/* 0以上a未満の整数値をランダムに生成する. */
-function randint(a) {
-    let ret = Math.floor(a * Math.random());
+
+
+
+
+/* array.array[idx]より周波数を計算する. */
+function calcFrequency(idx) {
+    let ret = FREQUENCY_BASE + FREQUENCY_UNIT * array.array[idx];
     return ret;
 }
+
+/* oscillatorを作成する. */
+function makeOscillator(frequency) {
+    let oscillator = audioCtx.createOscillator();
+    // oscillatorとgain nodeを接続する
+    oscillator.connect(gainNode);
+    // oscillatorの設定をする
+    oscillator.type = OSCILLATOR_TYPE;
+
+    return oscillator;
+}
+
+
+
+
 
 /* 画面描画について初期化する. */
 function InitDraw() {
@@ -268,7 +307,7 @@ function initOscillator() {
     // audioCtxとgain nodeを接続する
     gainNode.connect(audioCtx.destination);
     // // gainNodeの設定をする
-    gainNode.gain.value = VOLUME_MAX;
+    gainNode.gain.value = SOUND_VOLUME;
 
     // oscillatorをarrayに追加する
     for (let i = 0; i < PARALLEL_PROCESS_QTY_MAX; i++) {
@@ -277,66 +316,9 @@ function initOscillator() {
     }
 }
 
-/* oscillatorを作成する. */
-function makeOscillator(frequency) {
-    let oscillator = audioCtx.createOscillator();
-    // oscillatorとgain nodeを接続する
-    oscillator.connect(gainNode);
-    // oscillatorの設定をする
-    oscillator.type = OSCILLATOR_TYPE;
-
-    return oscillator;
-}
-
-/* array.array[idx]より周波数を計算する. */
-function calcFrequency(idx) {
-    let ret = FREQUENCY_BASE + FREQUENCY_UNIT * array.array[idx];
-    return ret;
-}
-
-
-/* 初期化する. */
-function init() {
-    array = new MyArray();
-
-
-    // 画面描画について初期化する.
-    InitDraw();
-
-    // oscillatorを初期化する
-    initOscillator();
-
-    let processes = [Shuffle, BubbleSort]
-    let parallelQties = [10, 30];
-    processQueue = new ProcessQueue(processes, parallelQties);
-    let popped = processQueue.pop();
-
-    process = new popped[0]()
-    parallelQty = popped[1];
 
 
 
-}
-
-
-
-
-/* 更新する. */
-function update() {
-    for (let i = 0; i < parallelQty; i++) {
-        // processが終了したら, 次のプロセスにうつる.
-        if (process.update()) {
-            let popped = processQueue.pop();
-            process = new popped[0]()
-            parallelQty = popped[1];
-            break;
-        }
-    }
-
-
-    // oscillator.frequency.value++;
-    // console.log(oscillator.frequency.value);
-}
 
 /* arrayを描画する. */
 function drawGraph() {
@@ -369,9 +351,63 @@ function beepGraph() {
             array.oscillators[i].frequency.value = 0;
         }
     }
+    gainNode.gain.value = PARALLEL_PROCESS_QTY_MAX / ARRAY_LENGTH * SOUND_VOLUME;
     array.frequencies.length = 0;
 
 }
+
+
+
+
+
+/* 初期化する. */
+function init() {
+    array = new MyArray();
+
+
+    // 画面描画について初期化する.
+    InitDraw();
+
+    // oscillatorを初期化する
+    initOscillator();
+
+    let processes = [Shuffle, BubbleSort]
+    let parallelQties = [10, 30];
+    processQueue = new ProcessQueue(processes, parallelQties);
+    let popped = processQueue.pop();
+
+    process = new popped[0]()
+    parallelQty = popped[1];
+
+
+
+}
+
+
+
+
+
+/* 更新する. */
+function update() {
+    for (let i = 0; i < parallelQty; i++) {
+        // 次のフレームの描画に移りたい場合
+        if (process.update()) {
+            continue;
+        }
+        // processが終了したら, 次のプロセスにうつる.
+        if (process.isFinished) {
+            let popped = processQueue.pop();
+            process = new popped[0]()
+            parallelQty = popped[1];
+            break;
+        }
+
+    }
+}
+
+
+
+
 
 /* 描画する. */
 function draw() {
@@ -379,16 +415,23 @@ function draw() {
     beepGraph();
 }
 
+
+
+
+
 /* 1フレームごとに実行する. */
 function run() {
     update();
     draw();
     frame++;
     window.requestAnimationFrame(run);
-
-
 }
 
+
+
+
+
+/* window読み込み完了時にここから実行される. */
 window.onload = function () {
     init();
     window.requestAnimationFrame(run);
