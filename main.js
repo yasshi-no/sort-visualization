@@ -2,7 +2,8 @@
 
 // 配列
 let array;
-const ARRAY_LENGTH = 300;
+// const ARRAY_LENGTH = 500;
+const ARRAY_LENGTH = 1000;
 const PARALLEL_PROCESS_QTY_MAX = 100;
 
 // 描画先オブジェクト
@@ -11,8 +12,10 @@ let context;
 // 座標
 const GRAPH_UPPERLEFT_X = 0;
 const GRAPH_UPPERLEFT_Y = 0;
-const BAR_UNIT_HEIGHT = 1;
+// const BAR_UNIT_HEIGHT = 1;
+const BAR_UNIT_HEIGHT = 1 / 3;
 const BAR_WIDTH = 1;
+// const BAR_WIDTH = 1 / 2;
 const GRAPH_WIDTH = BAR_WIDTH * ARRAY_LENGTH;
 const GRAPH_HEIGHT = BAR_UNIT_HEIGHT * ARRAY_LENGTH;
 // 色
@@ -28,13 +31,14 @@ const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx;
 let gainNode;
 const FREQUENCY_BASE = 400;
-const FREQUENCY_UNIT = 5;
-const SOUND_VOLUME = 0.2;
+// const FREQUENCY_UNIT = 5;
+const FREQUENCY_UNIT = 1;
+const SOUND_VOLUME = 1;
 // 音の波形
 // const OSCILLATOR_TYPE = "sin";
-const OSCILLATOR_TYPE = "square";
+// const OSCILLATOR_TYPE = "square";
 // const OSCILLATOR_TYPE = "sawtooth";
-// const OSCILLATOR_TYPE = "triangle";
+const OSCILLATOR_TYPE = "triangle";
 
 // 処理手順のキュー
 let processAdministratorQueue;
@@ -138,6 +142,12 @@ class Process {
         return;
     }
 
+    /* 配列の要素へのアクセスを通知する */
+    notify(idx) {
+        let ret = new Notifyer(idx, array.array[idx], COLOR_BAR_ACCESSED);
+        return ret;
+    }
+
 }
 
 /* ソートが成功したか確認する. */
@@ -158,7 +168,12 @@ class CheckSorted extends Process {
             notifyer = new Notifyer(i + 1, array.array[i + 1], COLOR_BAR_ACCESSED);
             yield notifyer;
             if (array.array[i] <= array.array[i + 1]) {
+                // 大小関係が適切な場合
                 array.colors[i] = COLOR_BAR_SORTED;
+            } else {
+                // 大小関係が不適切な場合
+                console.log("unsorted")
+                return;
             }
         }
         array.colors[ARRAY_LENGTH - 1] = COLOR_BAR_SORTED;
@@ -254,6 +269,294 @@ class SelectionSort extends Sort {
     }
 }
 
+/* 挿入ソートをする. */
+class InsertionSort extends Sort {
+    constructor() {
+        super();
+        console.log("Insertion")
+    }
+
+    /* 配列へのアクセスごとにyieldする. */
+    *update() {
+        for (let i = 1; i < ARRAY_LENGTH; i++) {
+            let notifyer = new Notifyer(i, array.array[i], COLOR_BAR_ACCESSED);
+            yield notifyer;
+            notifyer = new Notifyer(i - 1, array.array[i - 1], COLOR_BAR_ACCESSED);
+            yield notifyer;
+
+            // 整列済みの先頭より大きい場合
+            if (array.array[i - 1] > array.array[i]) {
+                let tmp = array.array[i];
+                let j;
+                // 挿入すべきインデックスを探索し, jとする
+                for (j = i; (j > 0 && array.array[j - 1] > tmp); j--) {
+                    notifyer = new Notifyer(j - 1, array.array[j - 1], COLOR_BAR_ACCESSED);
+                    yield notifyer;
+                    array.array[j] = array.array[j - 1];
+                }
+                notifyer = new Notifyer(j, array.array[j], COLOR_BAR_ACCESSED);
+                yield notifyer;
+                array.array[j] = tmp;
+            }
+        }
+        return;
+
+    }
+}
+
+/* マージソートをする. */
+class MergeSort extends Sort {
+    constructor() {
+        super();
+        console.log("Merge")
+    }
+
+    /* 配列へのアクセスごとにyieldする. */
+    *update(left = 0, right = ARRAY_LENGTH) {
+        if (right - left == 1) {
+
+        } else {
+            let mergedArray = Array(right - left);
+            let mid = left + Math.floor((right - left) / 2);
+            yield* this.update(left, mid);
+            yield* this.update(mid, right);
+            let i = left;
+            let j = mid;
+            let idx = 0;
+            // ２つの区分を比較
+            while (i < mid && j < right) {
+                yield this.notify(i);
+                yield this.notify(j);
+                if (array.array[i] <= array.array[j]) {
+                    mergedArray[idx] = array.array[i];
+                    i++;
+                } else {
+                    mergedArray[idx] = array.array[j];
+                    j++;
+                }
+                idx++
+            }
+            // 残った区分を結合
+            while (i < mid) {
+                mergedArray[idx] = array.array[i];
+                i++;
+                idx++;
+            }
+            while (j < right) {
+                mergedArray[idx] = array.array[j];
+                j++;
+                idx++;
+            }
+
+            // 元の配列に反映
+            for (let idx = 0; idx < mergedArray.length; idx++) {
+                array.array[idx + left] = mergedArray[idx];
+                yield this.notify(idx + left);
+            }
+        }
+
+        // ソート完了時
+        if (right - left == ARRAY_LENGTH) {
+            return;
+        }
+    }
+}
+
+/* ストゥージソートをする. */
+class StoogeSort extends Sort {
+    constructor() {
+        super();
+        console.log("Stooge")
+    }
+
+    /* 配列へのアクセスごとにyieldする. */
+    *update(left = 0, right = ARRAY_LENGTH) {
+        yield this.notify(left);
+        yield this.notify(right - 1);
+        if (array.array[left] > array.array[right - 1]) {
+            array.swap(left, right - 1);
+        }
+        if (right - left >= 3) {
+            let t = Math.floor((right - left) / 3);
+            yield* this.update(left, right - t);
+            yield* this.update(left + t, right);
+            yield* this.update(left, right - t);
+        }
+
+        // ソート完了時
+        if (right - left == ARRAY_LENGTH) {
+            return;
+        }
+    }
+}
+
+/* シェーカーソートをする. */
+class ShakerSort extends Sort {
+    constructor() {
+        super();
+        console.log("Shaker")
+    }
+
+    /* 配列へのアクセスごとにyieldする. */
+    *update() {
+        let topIdx = 0;
+        let botIdx = ARRAY_LENGTH - 1;
+        while (true) {
+            let lastSwapIdx = 0;
+
+            // 順方向の走査
+            for (let i = topIdx; i < botIdx; i++) {
+                yield this.notify(i);
+                yield this.notify(i + 1);
+                if (array.array[i] > array.array[i + 1]) {
+                    array.swap(i, i + 1);
+                    lastSwapIdx = i;
+                }
+            }
+            // 後方の走査範囲を短縮する
+            botIdx = lastSwapIdx;
+
+            if (topIdx == botIdx) {
+                break;
+            }
+
+            // 逆方向の走査
+            for (let i = botIdx; i > topIdx; i--) {
+                yield this.notify(i);
+                yield this.notify(i - 1);
+                if (array.array[i - 1] > array.array[i]) {
+                    array.swap(i - 1, i);
+                    lastSwapIdx = i;
+                }
+            }
+            // 前方の捜査範囲を短縮する
+            topIdx = lastSwapIdx;
+
+            if (topIdx == botIdx) {
+                break;
+            }
+        }
+
+        return;
+    }
+}
+
+/* クイックソートをする. */
+class QuickSort extends Sort {
+    constructor() {
+        super();
+        console.log("Quick")
+    }
+
+    /* 配列へのアクセスごとにyieldする. */
+    *update(left = 0, right = ARRAY_LENGTH) {
+        if (right - left <= 1) {
+
+        } else {
+            let pivotIdx = randint(right - left) + left;
+            let pivot = array.array[pivotIdx];
+            yield this.notify(pivotIdx);
+            let l = left;   // pivot以下の要素
+            let r = right - 1;  // pivot超の要素
+            while (true) {
+                while (l < ARRAY_LENGTH && array.array[l] <= pivot) {
+                    yield this.notify(l);
+                    l++
+                }
+                if (l < ARRAY_LENGTH) {
+                    yield this.notify(l);
+                }
+                while (r >= 0 && array.array[r] > pivot) {
+                    yield this.notify(r);
+                    r--;
+                }
+                yield this.notify(r);
+
+
+                if (l < r) {
+                    // 交換できる場合
+                    array.swap(l, r);
+                    l++;
+                    r--;
+                } else {
+                    break;
+                }
+            }
+            yield* this.update(left, l);
+            yield* this.update(l, right);
+        }
+
+        if (right - left == ARRAY_LENGTH) {
+            return;
+        }
+    }
+}
+
+/* ヒープソートをする. */
+class HeapSort extends Sort {
+    constructor() {
+        super();
+        console.log("Heap")
+    }
+    /* idxとその子がヒープの条件を満たしているか否か */
+    isHeapified(idx, heapLength) {
+        let left = 2 * idx + 1;
+        let right = 2 * idx + 2;
+        let ret =
+            (left >= heapLength) ||
+            (left == heapLength - 1 &&
+                array.array[idx] >= array.array[left]) ||
+            (right < heapLength &&
+                array.array[idx] >= array.array[left] &&
+                array.array[idx] >= array.array[right])
+        return ret;
+    }
+
+    /* 子がヒープになっているarray.array[idx]の要素をヒープにする */
+    *heapify(idx, heapLength) {
+        // idxとその子がヒープの条件を満たしていない場合
+        while (!this.isHeapified(idx, heapLength)) {
+            let left = idx * 2 + 1;
+            let right = idx * 2 + 2;
+            let maxIdx;
+            yield this.notify(idx);
+            yield this.notify(left);
+            if (left == heapLength - 1) {
+                // 子が1つのみの場合
+                maxIdx = left;
+            } else {
+                // 子が2つの場合
+                yield this.notify(right);
+
+                if (array.array[left] >= array.array[right]) {
+                    maxIdx = left;
+                } else {
+                    maxIdx = right;
+                }
+            }
+            array.swap(idx, maxIdx);
+            idx = maxIdx;
+        }
+    }
+
+    /* 配列へのアクセスごとにyieldする. */
+    *update() {
+        // ヒープ構築
+        for (let i = ARRAY_LENGTH - 1; i >= 0; i--) {
+            yield* this.heapify(i, ARRAY_LENGTH);
+        }
+
+        // ヒープをもとにソート
+        for (let i = ARRAY_LENGTH - 1; i >= 0; i--) {
+            array.swap(0, i);
+            yield* this.heapify(0, i);
+        }
+
+        return;
+    }
+}
+
+
 
 
 /* 0以上a未満の整数値をランダムに生成する. */
@@ -339,14 +642,19 @@ function drawGraph() {
 
 /* arrayをもとに音を発生させる. */
 function beepGraph() {
+    gainNode.gain.value = 1 / processAdministrator.parallelQty * SOUND_VOLUME;
+    console.log(gainNode.gain.value);
+    // gainNode.gain.value = frame * SOUND_VOLUME;
+
     for (let i = 0; i < PARALLEL_PROCESS_QTY_MAX; i++) {
+        // array.oscillators[i].connect(gainNode);
         if (i < array.frequencies.length) {
             array.oscillators[i].frequency.value = array.frequencies[i];
         } else {
             array.oscillators[i].frequency.value = 0;
         }
     }
-    gainNode.gain.value = PARALLEL_PROCESS_QTY_MAX / ARRAY_LENGTH * SOUND_VOLUME;
+
     array.frequencies.length = 0;
 
 }
@@ -368,8 +676,17 @@ function init() {
 
     // プロセスの管理について初期化する
     processAdministratorQueue = [
-        new ProcessAdministrator(Shuffle, 50),
-        new ProcessAdministrator(SelectionSort, 50),
+        new ProcessAdministrator(Shuffle, 10),
+        // new ProcessAdministrator(BubbleSort, 30),
+        // new ProcessAdministrator(SelectionSort, 30),
+        // new ProcessAdministrator(InsertionSort, 40),
+        // new ProcessAdministrator(MergeSort, 10),
+        // new ProcessAdministrator(StoogeSort, 100),
+        // new ProcessAdministrator(ShakerSort, 20),
+        new ProcessAdministrator(QuickSort, 10),
+        // new ProcessAdministrator(HeapSort, 10),
+
+
         new ProcessAdministrator(CheckSorted, 10)
     ];
 
