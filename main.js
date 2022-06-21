@@ -610,7 +610,7 @@ function initOscillator() {
     // oscillatorをarrayに追加する
     for (let i = 0; i < PARALLEL_PROCESS_QTY_MAX; i++) {
         array.oscillators.push(makeOscillator(0));
-        array.oscillators[i].start();
+        // array.oscillators[i].start();
     }
 }
 
@@ -672,7 +672,7 @@ function init() {
     InitDraw();
 
     // oscillatorを初期化する
-    // initOscillator();
+    initOscillator();
 
     // プロセスの管理について初期化する
     processAdministratorQueue = [
@@ -722,7 +722,7 @@ function update() {
 /* 描画する. */
 function draw() {
     drawGraph();
-    // beepGraph();
+    beepGraph();
 }
 
 
