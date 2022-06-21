@@ -672,7 +672,7 @@ function init() {
     InitDraw();
 
     // oscillatorを初期化する
-    initOscillator();
+    // initOscillator();
 
     // プロセスの管理について初期化する
     processAdministratorQueue = [
@@ -722,7 +722,7 @@ function update() {
 /* 描画する. */
 function draw() {
     drawGraph();
-    beepGraph();
+    // beepGraph();
 }
 
 
