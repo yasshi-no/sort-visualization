@@ -8,4 +8,4 @@
 https://yasshi-no.github.io/sort-visualization/
   
   
-上記リンク先ではマージソートが描画されています.
+上記リンク先ではクイックソートが描画されています.
